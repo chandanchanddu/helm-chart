@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "name" . }}
+  labels:
+    app: {{ .Chart.Name }}-{{ .Values.image.tag }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    release: {{ template "name" . }}
+    tags.datadoghq.com/env: {{ .Values.datadog.env }}
+    tags.datadoghq.com/service: {{ template "name" . }}
+    tags.datadoghq.com/version: "v1.9.6"
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      release: {{ template "name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}-{{ .Values.image.tag }}
+        release: {{ template "name" . }}
+        tags.datadoghq.com/env: {{ .Values.datadog.env }}
+        tags.datadoghq.com/service: {{ template "name" . }}
+        tags.datadoghq.com/version: "v1.9.6"
+      annotations:
+        sidecar.istio.io/proxyCPU: 20m
+        sidecar.istio.io/proxyMemory: 50M
+    spec:
+      {{- if .Values.image.pullSecret.enabled }}
+      imagePullSecrets:
+        - name: {{ template "name" . }}-registry-auth
+      {{- end }}
+      {{- if .Values.gcp.enabled }}
+      volumes:
+          - name: gcp
+            secret:
+              secretName: network-routing-gcp-auth
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containers.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: {{ .Values.pod.livenessProbe.initialDelaySeconds }}
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: {{ .Values.pod.readinessProbe.initialDelaySeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+          {{- range $key, $value := .Values.environmentVariables }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: ENVIRONMENT
+              value: {{ .Values.ciEnvironment }}
+            - name: BUSINESS
+              value: {{ .Values.BUSINESS }}
+            - name: PROJECT_NAME
+              value: "{{ .Values.PROJECT_NAME }}"
+            - name: COUNTRY
+              value: "{{ .Values.COUNTRY }}"
+            - name: BRANCH
+              value: {{ .Values.ciEnvironment }}
+      {{- with .Values.hostAliases }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
