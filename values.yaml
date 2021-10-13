@@ -11,7 +11,7 @@ autoscaling:
   enabled: false
 
 image:
-  repository: 
+  repository: nginx
   tag: latest
   pullPolicy: IfNotPresent
   pullSecret:
